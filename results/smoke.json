@@ -1,0 +1,41 @@
+{
+  "env": {
+    "gpu": "NVIDIA RTX PRO 4000 Blackwell",
+    "torch": "2.11.0+cu128",
+    "transformers": "5.22.2",
+    "dtype": "torch.bfloat16",
+    "target": "Qwen/Qwen3-0.6B",
+    "adapter": null,
+    "draft": "Qwen/Qwen3-0.6B",
+    "repeats": 1
+  },
+  "correctness": [
+    {
+      "input_tokens": 64,
+      "output_tokens": 32,
+      "cached_eq_uncached": false,
+      "cached_eq_hf": false,
+      "first_mismatch_vs_uncached": 10,
+      "first_mismatch_vs_hf": 10,
+      "last_logit_max_abs_diff_vs_hf": 0.3125
+    },
+    {
+      "input_tokens": 256,
+      "output_tokens": 64,
+      "cached_eq_uncached": true,
+      "cached_eq_hf": true,
+      "first_mismatch_vs_uncached": null,
+      "first_mismatch_vs_hf": null,
+      "last_logit_max_abs_diff_vs_hf": 0.3125
+    },
+    {
+      "input_tokens": 1024,
+      "output_tokens": 128,
+      "cached_eq_uncached": false,
+      "cached_eq_hf": false,
+      "first_mismatch_vs_uncached": 16,
+      "first_mismatch_vs_hf": 16,
+      "last_logit_max_abs_diff_vs_hf": 0.625
+    }
+  ]
+}

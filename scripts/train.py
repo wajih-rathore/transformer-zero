@@ -59,7 +59,9 @@ if args.smoke:  # pipeline check only: random tiny model, real tokenizer, a few 
                                          num_attention_heads=4, num_key_value_heads=2, head_dim=16))
 else:
     model = AutoModelForCausalLM.from_pretrained(args.model, dtype=DTYPE, device_map={"": 0})
+model.config.use_cache = False
 model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+model.enable_input_require_grads()  # lets gradient checkpointing actually free activations behind frozen base weights
 model = get_peft_model(model, LoraConfig(
     r=args.rank, lora_alpha=2 * args.rank, lora_dropout=0.05, task_type="CAUSAL_LM",
     target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]))
