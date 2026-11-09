@@ -30,7 +30,17 @@ ap.add_argument("--accum", type=int, default=4)
 ap.add_argument("--max-steps", type=int, default=-1)
 ap.add_argument("--parquet", default=None)
 ap.add_argument("--smoke", action="store_true")
+ap.add_argument("--push", default=None, help="REPO:FOLDER on the HF Hub; best adapter + logs uploaded after every epoch")
 args = ap.parse_args()
+
+
+def push():
+    """Upload progress so a dropped Colab session loses at most one epoch."""
+    if args.push:
+        from huggingface_hub import upload_folder
+        repo, folder = args.push.split(":", 1)
+        upload_folder(repo_id=repo, folder_path=str(out), path_in_repo=folder, ignore_patterns=["trainer/*"],
+                      commit_message=f"train progress: {folder}")
 
 from peft import LoraConfig, get_peft_model  # noqa: E402
 from transformers import (AutoModelForCausalLM, AutoTokenizer, Qwen3Config, Qwen3ForCausalLM,  # noqa: E402
@@ -89,6 +99,8 @@ class ValidateEachEpoch(TrainerCallback):
             model.save_pretrained(out / "best")
             (out / "val_metrics.json").write_text(json.dumps(m, indent=2))
             pred.drop(columns=["note"]).to_json(out / "val_predictions.jsonl", orient="records", lines=True)
+        (out / "val_history.json").write_text(json.dumps(self.history, indent=2))
+        push()
 
 
 cb = ValidateEachEpoch()
@@ -105,4 +117,5 @@ log = {"args": vars(args), "train_rows": len(train_df), "val_rows": len(val_df),
        "best_val_macro_f1": cb.best, "val_history": cb.history, "trainer_log": trainer.state.log_history,
        "peak_mem_mb": torch.cuda.max_memory_allocated() / 2**20 if torch.cuda.is_available() else None}
 (out / "train_log.json").write_text(json.dumps(log, indent=2))
+push()
 print("DONE", {k: log[k] for k in ("train_s", "best_val_macro_f1", "peak_mem_mb")})
