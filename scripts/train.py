@@ -15,6 +15,7 @@ from pathlib import Path
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tz import DTYPE  # noqa: E402
 from tz.data import load_dataset, make_split, prompt_text, row_messages, split_frame, target_text  # noqa: E402
 from tz.evaluate import evaluate  # noqa: E402
 
@@ -47,7 +48,7 @@ if args.smoke:  # pipeline check only: random tiny model, real tokenizer, a few 
     model = Qwen3ForCausalLM(Qwen3Config(vocab_size=len(tok), hidden_size=64, intermediate_size=128, num_hidden_layers=2,
                                          num_attention_heads=4, num_key_value_heads=2, head_dim=16))
 else:
-    model = AutoModelForCausalLM.from_pretrained(args.model, dtype=torch.float16, device_map={"": 0})
+    model = AutoModelForCausalLM.from_pretrained(args.model, dtype=DTYPE, device_map={"": 0})
 model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
 model = get_peft_model(model, LoraConfig(
     r=args.rank, lora_alpha=2 * args.rank, lora_dropout=0.05, task_type="CAUSAL_LM",
@@ -96,7 +97,7 @@ trainer = Trainer(
     args=TrainingArguments(output_dir=str(out / "trainer"), per_device_train_batch_size=args.batch,
                            gradient_accumulation_steps=args.accum, num_train_epochs=args.epochs, max_steps=args.max_steps,
                            learning_rate=args.lr, lr_scheduler_type="cosine", warmup_steps=0.05, logging_steps=5,
-                           fp16=torch.cuda.is_available(), save_strategy="no", report_to="none", seed=42,
+                           fp16=torch.cuda.is_available() and DTYPE == torch.float16, bf16=DTYPE == torch.bfloat16, save_strategy="no", report_to="none", seed=42,
                            remove_unused_columns=False))
 t0 = time.time()
 trainer.train()

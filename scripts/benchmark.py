@@ -15,6 +15,7 @@ import torch
 import torch.nn.functional as F
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tz import DTYPE  # noqa: E402
 from tz.attention import reference_attention, tiled_attention  # noqa: E402
 from tz.data import load_dataset, make_split, note_sentences, prompt_text, row_messages, split_frame  # noqa: E402
 from tz.decoder import Qwen3Decoder, greedy_generate  # noqa: E402
@@ -36,7 +37,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer  # noqa: E402
 
 dev = torch.device("cuda")
 tok = AutoTokenizer.from_pretrained(args.target)
-hf = AutoModelForCausalLM.from_pretrained(args.target, dtype=torch.float16, device_map={"": 0}).eval()
+hf = AutoModelForCausalLM.from_pretrained(args.target, dtype=DTYPE, device_map={"": 0}).eval()
 if args.adapter:
     from peft import PeftModel
     hf = PeftModel.from_pretrained(hf, args.adapter).eval()
@@ -53,7 +54,7 @@ ids = lambda n: torch.tensor([pool[:n]], device=dev)  # noqa: E731
 enc = lambda text: tok(text, return_tensors="pt", add_special_tokens=False).input_ids.to(dev)  # noqa: E731
 
 res = {"env": {"gpu": torch.cuda.get_device_name(), "torch": torch.__version__, "transformers": transformers.__version__,
-               "dtype": "float16", "target": args.target, "adapter": args.adapter, "draft": args.draft, "repeats": args.repeats}}
+               "dtype": str(DTYPE), "target": args.target, "adapter": args.adapter, "draft": args.draft, "repeats": args.repeats}}
 out = Path(args.out)
 out.parent.mkdir(parents=True, exist_ok=True)
 save = lambda: out.write_text(json.dumps(res, indent=2))  # noqa: E731
@@ -122,7 +123,7 @@ if "attention" in args.parts:  # E3: reference vs tiled vs PyTorch SDPA, causal,
 
     for T in (128, 512, 1024, 2048, 4096, 8192):
         torch.manual_seed(0)
-        q, k, v = (torch.randn(1, H, T, D, device=dev, dtype=torch.float16) for _ in range(3))
+        q, k, v = (torch.randn(1, H, T, D, device=dev, dtype=DTYPE) for _ in range(3))
         try:
             gold = reference_attention(q.float(), k.float(), v.float())  # float32 ground truth
         except torch.cuda.OutOfMemoryError:
@@ -163,7 +164,7 @@ if "attention" in args.parts:  # E3: reference vs tiled vs PyTorch SDPA, causal,
 if "spec" in args.parts:  # F3: speculative vs plain greedy on the target, same prompts
     dtok = AutoTokenizer.from_pretrained(args.draft)
     assert dtok.get_vocab() == tok.get_vocab(), "draft and target tokenizers differ"
-    draft = Qwen3Decoder(AutoModelForCausalLM.from_pretrained(args.draft, dtype=torch.float16, device_map={"": 0}).eval())
+    draft = Qwen3Decoder(AutoModelForCausalLM.from_pretrained(args.draft, dtype=DTYPE, device_map={"": 0}).eval())
     rows = val[val.expert_sentences.map(len) > 0].head(5)
     tasks = {"explanation": ([enc(prompt_text(tok, explanation_messages(
         r.criterion_type, r.criterion_text, r.expert_eligibility,

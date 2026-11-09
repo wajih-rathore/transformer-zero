@@ -14,6 +14,7 @@ from pathlib import Path
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tz import DTYPE  # noqa: E402
 from tz.data import load_dataset, make_split, split_frame  # noqa: E402
 from tz.evaluate import evaluate  # noqa: E402
 
@@ -29,7 +30,7 @@ args = ap.parse_args()
 from transformers import AutoModelForCausalLM, AutoTokenizer  # noqa: E402
 
 tok = AutoTokenizer.from_pretrained(args.model)
-model = AutoModelForCausalLM.from_pretrained(args.model, dtype=torch.float16, device_map={"": 0})
+model = AutoModelForCausalLM.from_pretrained(args.model, dtype=DTYPE, device_map={"": 0})
 if args.adapter:
     from peft import PeftModel
     model = PeftModel.from_pretrained(model, args.adapter)
@@ -42,7 +43,7 @@ for s in args.splits:
     t0 = time.time()
     m, pred = evaluate(model, tok, split_frame(df, split, s))
     m["settings"] = {"model": args.model, "adapter": args.adapter, "split": s, "decoding": "greedy",
-                     "max_new_tokens": 64, "batch_size": 16, "dtype": "float16", "seconds": round(time.time() - t0, 1)}
+                     "max_new_tokens": 64, "batch_size": 16, "dtype": str(DTYPE), "seconds": round(time.time() - t0, 1)}
     (out / f"{s}_metrics.json").write_text(json.dumps(m, indent=2))
     pred.drop(columns=["note"]).to_json(out / f"{s}_predictions.jsonl", orient="records", lines=True)
     L = m["overall"]["labels"]
