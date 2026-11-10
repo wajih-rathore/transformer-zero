@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Transformer Zero — trial eligibility screening</title>
+<meta name="description" content="A fine-tuned language model reads a patient's note against a clinical trial's eligibility criteria, one criterion at a time, and shows the sentences behind every decision." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --paper:#f6f7f9; --surface:#ffffff; --ink:#17262e; --ink-soft:#52636c;
+  --teal:#0e7c7b; --teal-deep:#0a5f5e; --teal-wash:#dcecea; --line:#e4e8ec;
+  --pos:#1e7d45; --pos-wash:#e4f2e8;
+  --neg:#b5342c; --neg-wash:#f7e4e2;
+  --warn:#9a6a08; --warn-wash:#f4ead2;
+  --mute:#647079; --mute-wash:#edf0f2;
+  --radius:10px; --maxw:1080px;
+  --serif:"Newsreader",Georgia,serif; --sans:"IBM Plex Sans",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:var(--sans); font-size:16px; line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:var(--maxw); margin:0 auto; padding:0 24px}
+a{color:var(--teal-deep); text-underline-offset:2px}
+h1,h2,h3{font-family:var(--serif); font-weight:500; line-height:1.15; letter-spacing:-.01em; margin:0}
+
+/* header */
+.top{display:flex; align-items:center; justify-content:space-between; padding:22px 0; border-bottom:1px solid var(--line)}
+.brand{display:flex; align-items:center; gap:10px; font-weight:600; letter-spacing:-.01em}
+.brand .mk{width:16px; height:16px; border-radius:4px; background:var(--teal); position:relative}
+.brand .mk::after{content:""; position:absolute; inset:4px 4px auto auto; width:4px; height:4px; border-radius:1px; background:#fff}
+.top nav{display:flex; gap:20px; font-size:14px}
+.top nav a{color:var(--ink-soft); text-decoration:none}
+.top nav a:hover{color:var(--ink)}
+
+/* hero */
+.hero{padding:64px 0 40px; max-width:40rem}
+.hero h1{font-size:clamp(34px,5vw,52px)}
+.hero p{font-size:19px; color:var(--ink-soft); margin:18px 0 0; max-width:34rem}
+.flag{display:inline-flex; align-items:center; gap:8px; margin-top:26px; padding:7px 13px; background:var(--surface); border:1px solid var(--line); border-radius:999px; font-size:13px; color:var(--ink-soft)}
+.flag .dot{width:7px;height:7px;border-radius:50%;background:var(--warn)}
+
+/* section rhythm */
+section{padding:28px 0}
+.sec-head{display:flex; align-items:baseline; gap:14px; margin-bottom:18px}
+.sec-head h2{font-size:27px}
+.sec-head .k{font-size:13px; color:var(--ink-soft)}
+
+/* tool panel */
+.panel{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:24px}
+.ex-row{display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:18px}
+.ex-row .lab{font-size:13px; color:var(--ink-soft); margin-right:2px}
+.pill{font-family:var(--sans); font-size:13px; padding:7px 13px; background:var(--paper); border:1px solid var(--line); border-radius:999px; color:var(--ink); cursor:pointer}
+.pill:hover{border-color:var(--teal); color:var(--teal-deep)}
+.field{margin-bottom:16px}
+.field label{display:block; font-size:13px; font-weight:600; margin-bottom:6px}
+.field .hint{font-weight:400; color:var(--ink-soft)}
+textarea{width:100%; font-family:var(--sans); font-size:15px; line-height:1.5; color:var(--ink); background:var(--paper); border:1px solid var(--line); border-radius:8px; padding:11px 12px; resize:vertical}
+textarea:focus{outline:2px solid var(--teal); outline-offset:0; background:#fff}
+.two{display:grid; grid-template-columns:1fr 1fr; gap:16px}
+.run-row{display:flex; align-items:center; gap:14px; margin-top:4px; flex-wrap:wrap}
+.btn{font-family:var(--sans); font-size:15px; font-weight:600; color:#fff; background:var(--teal); border:0; border-radius:8px; padding:11px 22px; cursor:pointer}
+.btn:hover{background:var(--teal-deep)}
+.btn:disabled{opacity:.55; cursor:default}
+.engine{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--ink-soft)}
+.engine select{font-family:var(--sans); font-size:13px; padding:7px 9px; border:1px solid var(--line); border-radius:7px; background:#fff; color:var(--ink)}
+
+/* status */
+.status{margin-top:18px; font-size:14px; color:var(--ink-soft); display:none}
+.status.show{display:flex; align-items:center; gap:10px}
+.spin{width:15px;height:15px;border:2px solid var(--teal-wash); border-top-color:var(--teal); border-radius:50%; animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.status.err{color:var(--neg)}
+
+/* results */
+.results{display:none; margin-top:26px}
+.results.show{display:block}
+.verdict{display:flex; align-items:center; gap:14px; padding:16px 18px; border-radius:10px; border:1px solid var(--line); background:var(--surface); margin-bottom:22px}
+.verdict .big{font-family:var(--serif); font-size:22px}
+.verdict .why{font-size:14px; color:var(--ink-soft)}
+.verdict.v-pos{background:var(--pos-wash); border-color:#bfe0cb}
+.verdict.v-neg{background:var(--neg-wash); border-color:#eccac6}
+.verdict.v-warn{background:var(--warn-wash); border-color:#e6d4a6}
+
+.grid{display:grid; grid-template-columns:minmax(0,.92fr) minmax(0,1.08fr); gap:26px; align-items:start}
+.note-col h3,.crit-col h3{font-size:15px; font-family:var(--sans); font-weight:600; color:var(--ink-soft); margin:0 0 10px}
+.note{list-style:none; margin:0; padding:0; counter-reset:s -1}
+.note li{position:relative; padding:7px 10px 7px 34px; border-radius:7px; font-size:15px; color:var(--ink); transition:background .18s}
+.note li::before{counter-increment:s; content:counter(s," ",decimal); content:counter(s); position:absolute; left:10px; top:7px; font-size:12px; color:var(--mute); font-variant-numeric:tabular-nums}
+.note li.ev{background:var(--mute-wash)}
+.note li.lit{background:var(--teal-wash); box-shadow:inset 3px 0 0 var(--teal)}
+
+.crit{border:1px solid var(--line); border-radius:9px; padding:14px 15px; margin-bottom:12px; background:var(--surface); transition:border-color .15s, box-shadow .15s}
+.crit:hover{border-color:var(--teal); box-shadow:0 1px 0 var(--teal-wash)}
+.crit .row1{display:flex; justify-content:space-between; gap:12px; align-items:flex-start}
+.crit .ctext{font-size:15px; font-weight:500}
+.crit .ckind{font-size:12px; color:var(--ink-soft); margin-top:2px}
+.chip{flex:none; font-size:12.5px; font-weight:600; padding:4px 10px; border-radius:999px; white-space:nowrap}
+.chip.pos{color:var(--pos); background:var(--pos-wash)}
+.chip.neg{color:var(--neg); background:var(--neg-wash)}
+.chip.pass{color:var(--teal-deep); background:var(--teal-wash)}
+.chip.warn{color:var(--warn); background:var(--warn-wash)}
+.chip.mute{color:var(--mute); background:var(--mute-wash)}
+.crit .ev-tag{margin-top:9px; font-size:12.5px; color:var(--ink-soft)}
+.crit .ev-tag b{color:var(--teal-deep); font-weight:600; cursor:default}
+.crit .expl{margin-top:9px; font-size:14px; color:var(--ink); line-height:1.5}
+
+/* legend */
+.legend{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px}
+.leg{display:flex; gap:11px; align-items:flex-start; padding:13px 14px; background:var(--surface); border:1px solid var(--line); border-radius:9px}
+.leg .sw{flex:none; width:11px; height:11px; border-radius:3px; margin-top:4px}
+.leg b{font-weight:600}
+.leg span{display:block; font-size:13.5px; color:var(--ink-soft)}
+
+/* explainer prose */
+.prose{max-width:40rem}
+.prose p{font-family:var(--serif); font-size:18px; line-height:1.6; color:#28363d; margin:0 0 16px}
+.steps{display:grid; gap:12px; margin-top:8px}
+.step{display:flex; gap:13px; align-items:flex-start; padding:14px 16px; background:var(--surface); border:1px solid var(--line); border-radius:9px}
+.step .n{flex:none; width:26px; height:26px; border-radius:50%; background:var(--teal-wash); color:var(--teal-deep); font-size:13px; font-weight:600; display:grid; place-items:center}
+.step b{font-weight:600}
+.step p{margin:3px 0 0; font-family:var(--sans); font-size:14px; color:var(--ink-soft); line-height:1.5}
+
+/* accuracy */
+.acc{display:grid; grid-template-columns:auto 1fr; gap:28px; align-items:center; background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:26px}
+.acc .num{font-family:var(--serif); font-size:60px; line-height:1; color:var(--teal); font-variant-numeric:tabular-nums}
+.acc .num small{display:block; font-family:var(--sans); font-size:13px; color:var(--ink-soft); font-weight:400; margin-top:8px; max-width:12rem}
+.acc .body p{margin:0 0 12px; font-size:15px; line-height:1.6}
+.acc .body p:last-child{margin-bottom:0}
+
+footer{border-top:1px solid var(--line); margin-top:40px; padding:28px 0 56px; color:var(--ink-soft); font-size:14px; display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap}
+footer a{color:var(--ink-soft)}
+
+@media (max-width:760px){
+  .two{grid-template-columns:1fr}
+  .grid{grid-template-columns:1fr}
+  .acc{grid-template-columns:1fr; gap:14px}
+  .hero{padding:44px 0 28px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important; transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand"><span class="mk"></span> Transformer Zero</div>
+    <nav>
+      <a href="https://huggingface.co/spaces/wajih-rathore/transformer-zero-screen" target="_blank" rel="noopener">Model space</a>
+      <a href="#how">How it reads</a>
+      <a href="#accuracy">Accuracy</a>
+    </nav>
+  </header>
+
+  <div class="hero">
+    <h1>Does this patient belong in the trial?</h1>
+    <p>A fine-tuned language model reads a patient's note against a trial's eligibility criteria — one criterion at a time — and points to the exact sentences behind every decision.</p>
+    <span class="flag"><span class="dot"></span> Educational prototype. Not a clinical enrollment decision.</span>
+  </div>
+
+  <section id="tool">
+    <div class="panel">
+      <div class="ex-row">
+        <span class="lab">Try an example:</span>
+        <button class="pill" data-ex="sigir-20142/NCT00711399">Pediatric respiratory</button>
+        <button class="pill" data-ex="sigir-201420/NCT01594385">Trauma laparotomy</button>
+        <button class="pill" id="clearBtn">Clear</button>
+      </div>
+
+      <div class="field">
+        <label for="note">Patient note <span class="hint">— the clinical description</span></label>
+        <textarea id="note" rows="6" placeholder="Paste the patient's description here."></textarea>
+      </div>
+
+      <div class="two">
+        <div class="field">
+          <label for="inc">Inclusion criteria <span class="hint">— one per line</span></label>
+          <textarea id="inc" rows="5" placeholder="Age 18 or older&#10;Confirmed diagnosis of ..."></textarea>
+        </div>
+        <div class="field">
+          <label for="exc">Exclusion criteria <span class="hint">— one per line</span></label>
+          <textarea id="exc" rows="5" placeholder="Pregnant or breastfeeding&#10;Known allergy to ..."></textarea>
+        </div>
+      </div>
+
+      <div class="run-row">
+        <button class="btn" id="runBtn">Screen patient</button>
+        <span class="engine">
+          <label for="engine">Engine</label>
+          <select id="engine">
+            <option value="Fast (batched)">Fast (batched)</option>
+            <option value="Our decoder (KV cache)">From-scratch decoder (KV cache)</option>
+            <option value="Our decoder + speculative">From-scratch + speculative</option>
+          </select>
+        </span>
+      </div>
+
+      <div class="status" id="status"></div>
+
+      <div class="results" id="results">
+        <div class="verdict" id="verdict"></div>
+        <div class="grid">
+          <div class="note-col">
+            <h3>Patient note — evidence lights up</h3>
+            <ol class="note" id="noteOut"></ol>
+          </div>
+          <div class="crit-col">
+            <h3>Decision per criterion</h3>
+            <div id="critOut"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="sec-head"><h2>How to read a result</h2><span class="k">five outcomes, one per criterion</span></div>
+    <div class="legend">
+      <div class="leg"><span class="sw" style="background:var(--pos)"></span><div><b>Included</b><span>The note shows the patient meets this inclusion rule.</span></div></div>
+      <div class="leg"><span class="sw" style="background:var(--neg)"></span><div><b>Not included / Excluded</b><span>The patient fails an inclusion rule, or an exclusion rule applies — a likely stop.</span></div></div>
+      <div class="leg"><span class="sw" style="background:var(--teal)"></span><div><b>Not excluded</b><span>An exclusion rule was checked and does not apply — the patient passes it.</span></div></div>
+      <div class="leg"><span class="sw" style="background:var(--warn)"></span><div><b>Not enough information</b><span>The note doesn't say either way. The model declines to guess.</span></div></div>
+      <div class="leg"><span class="sw" style="background:var(--mute)"></span><div><b>Not applicable</b><span>The rule doesn't apply to this patient — a pregnancy criterion for a man, say.</span></div></div>
+    </div>
+
+    <div class="sec-head" style="margin-top:34px"><h2>Evidence, not vibes</h2></div>
+    <div class="prose">
+      <p>Every decision comes with the sentence numbers it rests on. Hover a criterion and those sentences light up in the note, so you can check the model's reasoning instead of trusting it. A decision with no evidence is itself a signal — usually "not enough information."</p>
+    </div>
+
+    <div class="sec-head" style="margin-top:30px"><h2>How it decides</h2></div>
+    <div class="steps">
+      <div class="step"><span class="n">1</span><div><b>Label and cite.</b><p>The fine-tuned model reads one criterion and the note, returns a label, and lists the sentence numbers that justify it — as strict JSON, so nothing is hand-waved.</p></div></div>
+      <div class="step"><span class="n">2</span><div><b>Explain from the citation.</b><p>The same model, with fine-tuning switched off, writes a plain-English reason using only the cited sentences — so the explanation can't drift from the evidence.</p></div></div>
+      <div class="step"><span class="n">3</span><div><b>Roll up a verdict.</b><p>A simple rule combines the per-criterion labels into an overall read: eligible, needs more information, or likely not eligible.</p></div></div>
+    </div>
+  </section>
+
+  <section id="accuracy">
+    <div class="sec-head"><h2>How accurate is it?</h2></div>
+    <div class="acc">
+      <div class="num">~76%<small>criterion-level agreement with expert physicians, held-out test set</small></div>
+      <div class="body">
+        <p>That sounds modest until you see the ceiling: the dataset's own GPT-4 labels agree with the experts only ~90% of the time, and even that is inflated, because the expert labels were made by correcting GPT-4. A 4-billion-parameter open model, run on a single GPU, lands close behind — and never produces malformed output.</p>
+        <p>Where it slips, it slips cautiously: it leans toward "not enough information" or "not excluded" when a human would commit. It under-calls exclusions more than it invents them — the safer direction for a screening aid a person reviews.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Transformer Zero · fine-tuned Qwen3-4B on TrialGPT criterion annotations.</span>
+    <span><a href="https://huggingface.co/spaces/wajih-rathore/transformer-zero-screen" target="_blank" rel="noopener">Run the model space →</a></span>
+  </footer>
+
+</div>
+
+<script>
+const SPACE = "https://wajih-rathore-transformer-zero-screen.hf.space";
+const EXAMPLES = {
+ "sigir-20142/NCT00711399":{note:"0. An 8-year-old male presents in March to the ER with fever up to 39 C, dyspnea and cough for 2 days.\n1. He has just returned from a 5 day vacation in Colorado.\n2. Parents report that prior to the onset of fever and cough, he had loose stools.\n3. He denies upper respiratory tract symptoms.\n4. On examination he is in respiratory distress and has bronchial respiratory sounds on the left.\n5. A chest x-ray shows bilateral lung infiltrates.\n6. The patient will provide informed consent, and will comply with the trial protocol without any practical issues.",inc:["Patient and/or parents/guardian signed informed consent","Patients with cough or shortness of breath"],exc:["Chest tubes","Skin lesions precluding attachment of sensors","Respiratory distress","Pregnant women"]},
+ "sigir-201420/NCT01594385":{note:"0. A 32-year-old woman is admitted to the ER following a car accident.\n1. She has sustained multiple injuries including upper and lower extremity fractures.\n2. She is fully awake and alert, and she reports that she was not wearing a seat belt.\n3. Her blood pressure is 134/74 mm Hg, and her pulse is 87/min.\n4. Physical examination reveals a tender abdomen with guarding and rebound in all four quadrants.\n5. She has no bowel sounds.\n6. The patient will provide informed consent, and will comply with the trial protocol without any practical issues.",inc:["Trauma patients undergoing DC/OA management for traumatic injury","Age 18+","Life expectancy longer than 48 hours"],exc:["Prisoners","Pregnant patients","Younger than 18 years of age"]}
+};
+const LABELS = {
+ "included":{cls:"pos",text:"Included"},
+ "not included":{cls:"neg",text:"Not included"},
+ "excluded":{cls:"neg",text:"Excluded"},
+ "not excluded":{cls:"pass",text:"Not excluded"},
+ "not enough information":{cls:"warn",text:"Not enough info"},
+ "not applicable":{cls:"mute",text:"Not applicable"},
+ "invalid output":{cls:"mute",text:"Unreadable"}
+};
+const $ = s => document.querySelector(s);
+const noteEl=$("#note"), incEl=$("#inc"), excEl=$("#exc");
+
+document.querySelectorAll(".pill[data-ex]").forEach(b=>b.onclick=()=>{
+  const e=EXAMPLES[b.dataset.ex];
+  noteEl.value=e.note.replace(/^\d+\.\s*/gm,""); // show as plain prose; model re-splits
+  incEl.value=e.inc.join("\n"); excEl.value=e.exc.join("\n");
+  $("#results").classList.remove("show");
+});
+$("#clearBtn").onclick=()=>{noteEl.value=incEl.value=excEl.value="";$("#results").classList.remove("show");};
+
+function setStatus(msg,kind){
+  const s=$("#status"); s.className="status show"+(kind==="err"?" err":"");
+  s.innerHTML = kind==="err" ? msg : '<span class="spin"></span>'+msg;
+  if(!msg) s.className="status";
+}
+
+function parseSSE(text){
+  const lines=text.split("\n"); let out=null, err=null;
+  for(let i=0;i<lines.length;i++){
+    if(lines[i].startsWith("event: complete")){
+      for(let j=i+1;j<lines.length;j++){ if(lines[j].startsWith("data:")){ out=lines[j].slice(5).trim(); break; } }
+    }
+    if(lines[i].startsWith("event: error")){ err="The model returned an error."; }
+  }
+  if(err) throw new Error(err);
+  if(!out) throw new Error("No result from the model.");
+  return JSON.parse(out);
+}
+
+async function callSpace(note,inc,exc,engine){
+  const post=await fetch(SPACE+"/gradio_api/call/screen",{
+    method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({data:[note,inc,exc,engine]})
+  });
+  if(!post.ok) throw new Error("Could not reach the model space ("+post.status+").");
+  const {event_id}=await post.json();
+  const res=await fetch(SPACE+"/gradio_api/call/screen/"+event_id);
+  const text=await res.text();
+  return parseSSE(text); // [summaryMd, {headers,data}, numberedStr, file]
+}
+
+function rollupVerdict(rows){
+  const stop=rows.some(r=>(r.type==="inclusion"&&r.label==="not included")||(r.type==="exclusion"&&r.label==="excluded"));
+  if(stop) return {cls:"v-neg",big:"Likely not eligible",why:"At least one inclusion rule is unmet or an exclusion rule applies."};
+  const unsure=rows.some(r=>r.label==="not enough information"||r.label==="invalid output");
+  if(unsure) return {cls:"v-warn",big:"Needs more information",why:"Nothing rules the patient out, but some criteria can't be decided from the note."};
+  return {cls:"v-pos",big:"Likely eligible",why:"Every criterion is met or not applicable based on the note."};
+}
+
+function render(result){
+  const headers=result[1].headers, data=result[1].data;
+  const col=n=>headers.indexOf(n);
+  const rows=data.map(r=>({
+    type:String(r[col("Type")]), crit:String(r[col("Criterion")]),
+    label:String(r[col("Decision")]).toLowerCase(),
+    ev:String(r[col("Evidence IDs")]||"").split(",").map(x=>x.trim()).filter(x=>x!=="").map(Number),
+    expl:String(r[col("Explanation")]||"")
+  }));
+  const sentences=String(result[2]).split("\n").map(s=>s.replace(/^\d+\.\s*/,"")).filter(s=>s.length);
+
+  // note with evidence markers
+  const evAll=new Set(); rows.forEach(r=>r.ev.forEach(i=>evAll.add(i)));
+  $("#noteOut").innerHTML=sentences.map((s,i)=>`<li data-i="${i}" class="${evAll.has(i)?"ev":""}">${escapeHtml(s)}</li>`).join("");
+
+  // criteria cards
+  $("#critOut").innerHTML=rows.map(r=>{
+    const L=LABELS[r.label]||{cls:"mute",text:r.label};
+    const ev=r.ev.length?`<div class="ev-tag">Evidence: <b data-ev="${r.ev.join(',')}">sentence ${r.ev.join(", ")}</b></div>`:`<div class="ev-tag">No sentence cited.</div>`;
+    return `<div class="crit" data-ev="${r.ev.join(',')}">
+      <div class="row1"><div><div class="ctext">${escapeHtml(r.crit)}</div><div class="ckind">${r.type} criterion</div></div><span class="chip ${L.cls}">${L.text}</span></div>
+      ${ev}${r.expl?`<div class="expl">${escapeHtml(r.expl)}</div>`:""}</div>`;
+  }).join("");
+
+  // hover to light evidence
+  document.querySelectorAll(".crit").forEach(card=>{
+    const ids=(card.dataset.ev||"").split(",").filter(x=>x!=="");
+    const lit=on=>ids.forEach(i=>{const li=$("#noteOut").querySelector(`li[data-i="${i}"]`); if(li) li.classList.toggle("lit",on);});
+    card.addEventListener("mouseenter",()=>lit(true));
+    card.addEventListener("mouseleave",()=>lit(false));
+  });
+
+  const v=rollupVerdict(rows);
+  $("#verdict").className="verdict "+v.cls;
+  $("#verdict").innerHTML=`<span class="big">${v.big}</span><span class="why">${v.why}</span>`;
+  $("#results").classList.add("show");
+}
+
+function escapeHtml(s){return s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+
+$("#runBtn").onclick=async()=>{
+  const note=noteEl.value.trim(), inc=incEl.value.trim(), exc=excEl.value.trim();
+  if(!note){setStatus("Add a patient note first.","err");return;}
+  if(!inc&&!exc){setStatus("Add at least one inclusion or exclusion criterion.","err");return;}
+  $("#runBtn").disabled=true; $("#results").classList.remove("show");
+  setStatus("Reading the note against each criterion… the first run warms up the model (~30s).");
+  try{
+    const result=await callSpace(note,inc,exc,$("#engine").value);
+    setStatus("");
+    render(result);
+    $("#results").scrollIntoView({behavior:"smooth",block:"nearest"});
+  }catch(e){
+    setStatus((e.message||"Something went wrong.")+" The shared GPU has a daily limit — if it's exhausted, try again later.","err");
+  }finally{ $("#runBtn").disabled=false; }
+};
+</script>
+</body>
+</html>

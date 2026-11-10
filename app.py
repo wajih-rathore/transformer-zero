@@ -18,7 +18,9 @@ import torch
 try:
     import spaces
     gpu = spaces.GPU
+    ZEROGPU = True
 except ImportError:  # not on a ZeroGPU Space: run functions as they are
+    ZEROGPU = False
     def gpu(*a, **k):
         return a[0] if a and callable(a[0]) else (lambda f: f)
 
@@ -36,15 +38,31 @@ NOTICE = "Educational screening prototype only. Not a clinical enrollment decisi
 
 from transformers import AutoModelForCausalLM, AutoTokenizer  # noqa: E402
 
-dev = "cuda" if torch.cuda.is_available() else "cpu"
+dev = "cuda" if torch.cuda.is_available() else "cpu"  # where inference runs
 dtype = torch.bfloat16 if dev == "cuda" else torch.float32
 tok = AutoTokenizer.from_pretrained(TARGET)
-model = AutoModelForCausalLM.from_pretrained(TARGET, dtype=dtype).to(dev).eval()
+# Load on CPU; apply LoRA on CPU (torch_device="cpu"). On ZeroGPU the real GPU attaches
+# only inside @spaces.GPU and spaces patches cuda.is_available()->True at import, so loading
+# weights to cuda now would crash. _ensure_device() moves everything onto the GPU on the
+# first decorated call; off ZeroGPU we move immediately.
+model = AutoModelForCausalLM.from_pretrained(TARGET, dtype=dtype).eval()
 if ADAPTER:
     from peft import PeftModel
-    model = PeftModel.from_pretrained(model, ADAPTER, subfolder=ADAPTER_DIR).eval()
-draft_hf = AutoModelForCausalLM.from_pretrained(DRAFT, dtype=dtype).to(dev).eval()
+    model = PeftModel.from_pretrained(model, ADAPTER, subfolder=ADAPTER_DIR, torch_device="cpu").eval()
+draft_hf = AutoModelForCausalLM.from_pretrained(DRAFT, dtype=dtype).eval()
+if not ZEROGPU:
+    model, draft_hf = model.to(dev), draft_hf.to(dev)
 dec, draft = Qwen3Decoder(model), Qwen3Decoder(draft_hf)
+
+
+def _ensure_device():
+    """On ZeroGPU the GPU exists only inside @spaces.GPU; move models here on first use."""
+    if not torch.cuda.is_available() or dec.device.type == "cuda":
+        return
+    model.to("cuda")
+    draft_hf.to("cuda")
+    dec.device = next(model.parameters()).device
+    draft.device = next(draft_hf.parameters()).device
 EOS = {tok.convert_tokens_to_ids("<|im_end|>"), tok.convert_tokens_to_ids("<|endoftext|>")}
 LORA = bool(ADAPTER)
 
@@ -100,6 +118,7 @@ def verdict(rows):
 
 @gpu(duration=120)
 def _screen_gpu(sentences, criteria, engine):
+    _ensure_device()
     prompts = [prompt_text(tok, build_messages(sentences, t, c)) for t, c in criteria]
     t0 = time.perf_counter()
     if engine.startswith("Fast"):
@@ -172,6 +191,7 @@ def lab(prompt, experiment, max_new, k):
     prompt = (prompt or "").strip()
     if not prompt:
         raise gr.Error("Type a prompt first.")
+    _ensure_device()
     x = _ids(prompt_text(tok, [{"role": "user", "content": prompt}]))
     max_new, k = int(max_new), int(k)
     runs = []
