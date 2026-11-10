@@ -478,6 +478,19 @@ would raise acceptance). Finally, we evaluate single-criterion decisions; rollin
 them into a trial-level recommendation (as the app does) adds aggregation rules we
 did not formally validate.
 
+\section{Artifact Availability}
+All code, data splits, logs, and deployed applications are public:
+\begin{itemize}
+\item Source code and reproducible setup: \url{https://github.com/wajih-rathore/transformer-zero}
+\item Live application: \url{https://web-wajihs-projects-109cd685.vercel.app}
+\item Model Space (screening + inference lab): \url{https://huggingface.co/spaces/wajih-rathore/transformer-zero-screen}
+\item LoRA adapter weights: \url{https://huggingface.co/wajih-rathore/transformer-zero}
+\item Dataset: \url{https://huggingface.co/datasets/ncbi/TrialGPT-Criterion-Annotations}
+\end{itemize}
+The fixed 37/8/8 patient split manifest (\texttt{data/split\_manifest.json}) and the
+benchmark logs (\texttt{results/}) are committed to the repository; \texttt{make test}
+runs the 27 equivalence tests and \texttt{make eval} reproduces the reported metrics.
+
 \section{Conclusion}
 A 4B open decoder, LoRA-fine-tuned on expert criterion annotations, reaches 0.76
 label accuracy and 0.62 evidence-F1 with zero malformed outputs---close to the
